@@ -1,57 +1,88 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer, Table, TableStyle
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 from datetime import datetime
-import os
 import streamlit as st
+import os
 
 def generer_pdf(acc, f1, resume):
+    """
+    Génère un rapport PDF clair et professionnel.
+    """
     try:
-        doc = SimpleDocTemplate("rapport_snim.pdf", pagesize=A4)
+        # Nom et chemin du fichier
+        nom_pdf = "rapport_snim.pdf"
+        doc = SimpleDocTemplate(nom_pdf, pagesize=A4)
         styles = getSampleStyleSheet()
-        bleu = "#004b8d"
-
-        title_style = ParagraphStyle('title_style', parent=styles['Title'], textColor=bleu, fontSize=20, spaceAfter=20)
-        normal = ParagraphStyle('normal', parent=styles['BodyText'], fontSize=11, leading=15)
-        section = ParagraphStyle('section', parent=styles['Heading2'], textColor=bleu, spaceBefore=15, spaceAfter=10)
-
         story = []
+
+        # === Logo SNIM ===
         if os.path.exists("snim_logo.png"):
             story.append(Image("snim_logo.png", width=120, height=60))
-        story.append(Spacer(1,15))
-        story.append(Paragraph("Rapport SNIM Predict", title_style))
+        story.append(Spacer(1, 20))
+
+        # === Titre principal ===
+        story.append(Paragraph("<b><font size=16 color='#004b8d'>Rapport SNIM Predict</font></b>", styles["Title"]))
+        story.append(Spacer(1, 12))
+
+        # === Résumé global ===
         story.append(Paragraph(
-            f"<b>Date :</b> {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/><b>Généré par :</b> IA SNIM Predict",
-            normal
+            f"<b>Exactitude (Accuracy)</b> : {acc:.2f}<br/><b>Score F1</b> : {f1:.2f}",
+            styles["BodyText"]
         ))
+        story.append(Spacer(1, 15))
 
-        story.append(Paragraph("1️⃣  Résumé des performances du modèle", section))
-        story.append(Paragraph(f"Précision : {acc:.2f} Score F1 : {f1:.2f}", normal))
-
-        story.append(Paragraph("2️⃣  Analyse par engin", section))
+        # === Tableau des engins ===
         if not resume.empty:
-            for _, r in resume.iterrows():
-                story.append(Paragraph(f"<b>Engin {r['Engin']}</b> – {r['Statut']}", normal))
-        else:
-            story.append(Paragraph("Aucune donnée d'engin disponible.", normal))
+            story.append(Paragraph("<b>Résumé des engins analysés :</b>", styles["Heading3"]))
+            story.append(Spacer(1, 6))
 
-        story.append(PageBreak())
-        story.append(Paragraph("3️⃣  Interprétation et recommandations", section))
+            data = [["Engin", "Indice moyen", "Diagnostic"]]
+            for _, row in resume.iterrows():
+                data.append([
+                    str(row["Engin"]),
+                    f"{row['Label']:.2f}",
+                    row.get("Prochain_risque", "N/A")
+                ])
+
+            table = Table(data, colWidths=[70, 80, 280])
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#004b8d")),
+                ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+                ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+                ("FONTSIZE", (0,0), (-1,-1), 10),
+                ("BACKGROUND", (0,1), (-1,-1), colors.whitesmoke),
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 20))
+        else:
+            story.append(Paragraph("Aucune donnée d'engin disponible.", styles["Normal"]))
+
+        # === Pied de page ===
+        story.append(Spacer(1, 20))
         story.append(Paragraph(
-            "Les engins avec un score de risque supérieur à 0.6 nécessitent une vérification prioritaire.<br/>"
-            "Ce rapport peut être complété par les tendances capteurs et les historiques de maintenance.",
-            normal
+            f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>"
+            "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
+            styles["Italic"]
         ))
 
-        story.append(Spacer(1,20))
-        story.append(Paragraph(
-            "<i>IA développée par HAMDINOU Moulaye Driss – Data Scientist</i>", normal))
-
+        # === Construction du PDF ===
         doc.build(story)
 
-        with open("rapport_snim.pdf","rb") as f:
-            st.download_button("⬇️ Télécharger le rapport PDF", f, file_name="rapport_snim.pdf", mime="application/pdf")
-            st.success("✅ Rapport PDF généré avec succès !")
+        # === Lecture du fichier ===
+        with open(nom_pdf, "rb") as f:
+            pdf_data = f.read()
+
+        # === Bouton de téléchargement ===
+        st.download_button(
+            label="⬇️ Télécharger le rapport PDF",
+            data=pdf_data,
+            file_name=nom_pdf,
+            mime="application/pdf",
+            key="download_pdf"
+        )
 
     except Exception as e:
-        st.error(f"Erreur PDF : {e}")
+        st.error(f"⚠️ Erreur lors de la génération du PDF : {e}")
