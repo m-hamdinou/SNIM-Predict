@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
@@ -11,7 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from datetime import datetime
 import os
 
-# === Configuration de la page ===
+# ==================== CONFIGURATION DE LA PAGE ====================
 st.set_page_config(page_title="SNIM Predict", page_icon="🤖", layout="centered")
 
 st.markdown("""
@@ -24,30 +23,36 @@ h1, h2, h3 {color: #004b8d;}
 </style>
 """, unsafe_allow_html=True)
 
-# === Logo et titre ===
+# ==================== ENTÊTE ====================
 if os.path.exists("snim_logo.png"):
     st.image("snim_logo.png", width=160)
 st.title("💡 SNIM Predict")
-st.write("#### Maintenance prédictive assistée par Intelligence Artificielle")
+st.write("### Maintenance prédictive assistée par Intelligence Artificielle")
 st.write("_Développée par HAMDINOU Moulaye Driss – Data Scientist_")
 
-# === Upload des données ===
+st.info(
+    "SNIM Predict analyse les données IoT des machines pour détecter immédiatement "
+    "les comportements anormaux. Les techniciens peuvent l’utiliser chaque jour "
+    "ou chaque semaine pour anticiper les pannes et planifier les interventions."
+)
+
+# ==================== IMPORTATION DES DONNÉES ====================
 uploaded_file = st.file_uploader("📂 Importez vos données IoT (CSV)", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.write("Aperçu des données :")
+    st.write("### Aperçu des données :")
     st.dataframe(df.head())
 
     if st.button("🚀 Entraîner le modèle IA"):
         df = df.dropna().copy()
 
-        # Encodage automatique
+        # Encodage automatique des variables catégorielles
         for col in df.columns:
             if df[col].dtype == "object":
                 df[col] = pd.factorize(df[col])[0]
 
-        # Séparation variables / label
+        # Séparation des variables et du label
         X = df.drop(columns=["Label"]) if "Label" in df.columns else df.iloc[:, :-1]
         y = df["Label"] if "Label" in df.columns else df.iloc[:, -1]
         X = X.select_dtypes(include=[np.number])
@@ -65,68 +70,72 @@ if uploaded_file is not None:
         st.success("✅ Modèle entraîné avec succès !")
         st.markdown(f"### 📈 Précision : **{acc:.2f}** | Score F1 : **{f1:.2f}**")
 
-        # Interprétation automatique
+        # ==================== INTERPRÉTATION ====================
         st.markdown("#### 🧠 Interprétation automatique :")
         if acc >= 0.95:
             st.success("Le modèle détecte parfaitement les anomalies : fiabilité industrielle.")
-        elif acc >= 0.8:
-            st.warning("Bon modèle, mais un recalibrage pourrait améliorer la précision.")
+        elif acc >= 0.80:
+            st.warning("Bon modèle, mais un recalibrage pourrait encore améliorer la précision.")
         else:
-            st.error("Faible performance : revoir la qualité ou la quantité de données.")
+            st.error("Précision faible : revoir la qualité ou la quantité de données capteurs.")
 
-        # Résumé par engin
+        # ==================== RÉSUMÉ PAR ENGIN ====================
         if "Engin" in df.columns:
             st.markdown("### 📊 État des engins :")
             resume = df.groupby("Engin")["Label"].mean().reset_index()
             resume["Statut"] = resume["Label"].apply(
-                lambda x: "⚠️ Risque élevé" if x>0.6 else ("🔸 Risque moyen" if x>0.3 else "✅ Normal")
+                lambda x: "⚠️ Risque élevé" if x > 0.6 else ("🔸 Risque moyen" if x > 0.3 else "✅ Normal")
             )
-            st.dataframe(resume[["Engin","Statut","Label"]])
+            st.dataframe(resume[["Engin", "Statut", "Label"]])
+        else:
+            resume = pd.DataFrame()
 
-        # Génération du rapport PDF
+        # ==================== GÉNÉRATION DU PDF ====================
         if st.button("📄 Générer le rapport PDF"):
-    try:
-        doc = SimpleDocTemplate("rapport_snim.pdf", pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = []
+            try:
+                doc = SimpleDocTemplate("rapport_snim.pdf", pagesize=A4)
+                styles = getSampleStyleSheet()
+                story = []
 
-        if os.path.exists("snim_logo.png"):
-            story.append(Image("snim_logo.png", width=120, height=60))
-        story.append(Spacer(1, 20))
-        story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
-        story.append(Spacer(1, 15))
-        story.append(Paragraph(f"Précision : {acc:.2f} Score F1 : {f1:.2f}", styles["BodyText"]))
-        story.append(Spacer(1, 10))
+                if os.path.exists("snim_logo.png"):
+                    story.append(Image("snim_logo.png", width=120, height=60))
+                story.append(Spacer(1, 20))
+                story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
+                story.append(Spacer(1, 15))
+                story.append(Paragraph(f"Précision : {acc:.2f} Score F1 : {f1:.2f}", styles["BodyText"]))
+                story.append(Spacer(1, 10))
 
-        if "Engin" in df.columns:
-            story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
-            for _, row in resume.iterrows():
-                story.append(Paragraph(f"{row['Engin']} – {row['Statut']}", styles["BodyText"]))
-            story.append(Spacer(1, 15))
+                if not resume.empty:
+                    story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
+                    for _, row in resume.iterrows():
+                        story.append(Paragraph(f"{row['Engin']} – {row['Statut']}", styles["BodyText"]))
+                    story.append(Spacer(1, 15))
 
-        story.append(Paragraph(
-            f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>"
-            "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
-            styles["Italic"]
-        ))
+                story.append(Paragraph(
+                    f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>"
+                    "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
+                    styles["Italic"]
+                ))
 
-        doc.build(story)
+                doc.build(story)
 
-        # ✅ Lecture et envoi correct du fichier
-        with open("rapport_snim.pdf", "rb") as f:
-            pdf_bytes = f.read()
+                # Lecture et envoi correct du fichier
+                with open("rapport_snim.pdf", "rb") as f:
+                    pdf_bytes = f.read()
 
-        st.download_button(
-            label="⬇️ Télécharger le rapport PDF",
-            data=pdf_bytes,
-            file_name="rapport_snim.pdf",
-            mime="application/pdf"
-        )
+                st.download_button(
+                    label="⬇️ Télécharger le rapport PDF",
+                    data=pdf_bytes,
+                    file_name="rapport_snim.pdf",
+                    mime="application/pdf"
+                )
 
-        st.success("✅ Rapport généré avec succès ! Cliquez sur le bouton pour le télécharger.")
+                st.success("✅ Rapport généré avec succès ! Cliquez sur le bouton pour le télécharger.")
 
-    except Exception as e:
-        st.error(f"⚠️ Erreur lors de la génération du rapport : {e}")
+            except Exception as e:
+                st.error(f"⚠️ Erreur lors de la génération du rapport : {e}")
 
-st.markdown('<div class="footer">© 2025 SNIM Predict – HAMDINOU Moulaye Driss</div>',
-            unsafe_allow_html=True)
+st.markdown(
+    '<div class="footer">© 2025 SNIM Predict – HAMDINOU Moulaye Driss</div>',
+    unsafe_allow_html=True
+)
