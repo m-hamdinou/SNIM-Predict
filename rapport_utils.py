@@ -1,19 +1,23 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer, Table, TableStyle
+import streamlit as st
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from datetime import datetime
-import streamlit as st
-import os
+import tempfile, os
 
 def generer_pdf(acc, f1, resume):
     """
-    Génère un rapport PDF clair et professionnel.
+    Génère un rapport PDF complet et retourne un bouton de téléchargement fonctionnel.
+    Compatible Streamlit Cloud / Colab.
     """
     try:
-        # Nom et chemin du fichier
-        nom_pdf = "rapport_snim.pdf"
-        doc = SimpleDocTemplate(nom_pdf, pagesize=A4)
+        # === Fichier temporaire sûr ===
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        pdf_path = tmp_file.name
+
+        # === Préparation du document ===
+        doc = SimpleDocTemplate(pdf_path, pagesize=A4)
         styles = getSampleStyleSheet()
         story = []
 
@@ -22,7 +26,7 @@ def generer_pdf(acc, f1, resume):
             story.append(Image("snim_logo.png", width=120, height=60))
         story.append(Spacer(1, 20))
 
-        # === Titre principal ===
+        # === Titre ===
         story.append(Paragraph("<b><font size=16 color='#004b8d'>Rapport SNIM Predict</font></b>", styles["Title"]))
         story.append(Spacer(1, 12))
 
@@ -35,18 +39,18 @@ def generer_pdf(acc, f1, resume):
 
         # === Tableau des engins ===
         if not resume.empty:
-            story.append(Paragraph("<b>Résumé des engins analysés :</b>", styles["Heading3"]))
+            story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
 
             data = [["Engin", "Indice moyen", "Diagnostic"]]
-            for _, row in resume.iterrows():
+            for _, r in resume.iterrows():
                 data.append([
-                    str(row["Engin"]),
-                    f"{row['Label']:.2f}",
-                    row.get("Prochain_risque", "N/A")
+                    str(r["Engin"]),
+                    f"{r['Label']:.2f}",
+                    r.get("Prochain_risque", "N/A")
                 ])
 
-            table = Table(data, colWidths=[70, 80, 280])
+            table = Table(data, colWidths=[60, 80, 300])
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#004b8d")),
                 ("TEXTCOLOR", (0,0), (-1,0), colors.white),
@@ -58,7 +62,7 @@ def generer_pdf(acc, f1, resume):
             story.append(table)
             story.append(Spacer(1, 20))
         else:
-            story.append(Paragraph("Aucune donnée d'engin disponible.", styles["Normal"]))
+            story.append(Paragraph("Aucune donnée disponible.", styles["Normal"]))
 
         # === Pied de page ===
         story.append(Spacer(1, 20))
@@ -71,18 +75,19 @@ def generer_pdf(acc, f1, resume):
         # === Construction du PDF ===
         doc.build(story)
 
-        # === Lecture du fichier ===
-        with open(nom_pdf, "rb") as f:
+        # === Lecture et téléchargement ===
+        with open(pdf_path, "rb") as f:
             pdf_data = f.read()
 
-        # === Bouton de téléchargement ===
         st.download_button(
             label="⬇️ Télécharger le rapport PDF",
             data=pdf_data,
-            file_name=nom_pdf,
+            file_name="rapport_snim.pdf",
             mime="application/pdf",
-            key="download_pdf"
+            use_container_width=True
         )
+
+        st.success("✅ Rapport PDF généré avec succès !")
 
     except Exception as e:
         st.error(f"⚠️ Erreur lors de la génération du PDF : {e}")
