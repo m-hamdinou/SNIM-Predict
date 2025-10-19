@@ -6,9 +6,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 import plotly.express as px
 from datetime import datetime
-from rapport_utils import generer_pdf
+import os, tempfile
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 from data_preprocessing import valider_et_preparer
-import os
 
 # ==================== CONFIGURATION ====================
 st.set_page_config(page_title="SNIM Predict", page_icon="🤖", layout="wide")
@@ -81,7 +84,6 @@ if uploaded_files:
                           ("🔸 Risque moyen" if x > 0.3 else "✅ Normal")
             )
 
-            # Diagnostic automatique
             resume["Prochain_risque"] = resume["Label"].apply(
                 lambda x: (
                     "🔴 À vérifier immédiatement (panne probable)" if x > 0.5 else
@@ -93,16 +95,14 @@ if uploaded_files:
             st.markdown("### 🔍 Diagnostic automatique par engin")
             st.dataframe(resume[["Engin", "Label", "Prochain_risque"]])
 
-            # Message d’alerte global
             engin_max = resume.loc[resume["Label"].idxmax()]
             if engin_max["Label"] > 0.5:
                 st.error(f"🚨 L'engin {int(engin_max['Engin'])} présente un risque élevé ({engin_max['Label']:.2f}) — vérification urgente requise !")
             elif engin_max["Label"] > 0.2:
-                st.warning(f"⚠️ L'engin {int(engin_max['Engin'])} montre une dérive possible ({engin_max['Label']:.2f}) — surveillance recommandée .")
+                st.warning(f"⚠️ L'engin {int(engin_max['Engin'])} montre une dérive possible ({engin_max['Label']:.2f}) — surveillance recommandée.")
             else:
                 st.success("✅ Tous les engins fonctionnent normalement pour le moment.")
 
-            # Graphique
             st.markdown("### 📈 Niveau de risque par engin")
             fig = px.bar(
                 resume, x="Engin", y="Label", color="Prochain_risque",
@@ -114,7 +114,6 @@ if uploaded_files:
                 title="Indice de risque global par engin"
             )
             st.plotly_chart(fig, use_container_width=True)
-
         else:
             resume = pd.DataFrame()
             st.warning("⚠️ Aucune colonne 'Engin' détectée. Impossible de générer le diagnostic individuel.")
@@ -122,8 +121,60 @@ if uploaded_files:
         # ==================== GÉNÉRATION PDF ====================
         if st.button("📄 Générer le rapport PDF"):
             try:
-                generer_pdf(acc, f1, resume)
-                st.success("✅ Rapport PDF généré ! Téléchargez-le ci-dessous :")
+                tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                pdf_path = tmp_file.name
+
+                doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+                styles = getSampleStyleSheet()
+                story = []
+
+                if os.path.exists("snim_logo.png"):
+                    story.append(Image("snim_logo.png", width=120, height=60))
+                story.append(Spacer(1, 20))
+
+                story.append(Paragraph("<b><font size=16 color='#004b8d'>Rapport SNIM Predict</font></b>", styles["Title"]))
+                story.append(Spacer(1, 12))
+                story.append(Paragraph(f"<b>Exactitude (Accuracy)</b> : {acc:.2f}<br/><b>Score F1</b> : {f1:.2f}", styles["BodyText"]))
+                story.append(Spacer(1, 15))
+
+                if not resume.empty:
+                    story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
+                    data = [["Engin", "Indice moyen", "Diagnostic"]]
+                    for _, r in resume.iterrows():
+                        data.append([str(r["Engin"]), f"{r['Label']:.2f}", r.get("Prochain_risque", "N/A")])
+                    table = Table(data, colWidths=[60, 80, 300])
+                    table.setStyle(TableStyle([
+                        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#004b8d")),
+                        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+                        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+                        ("FONTSIZE", (0,0), (-1,-1), 10),
+                        ("BACKGROUND", (0,1), (-1,-1), colors.whitesmoke),
+                    ]))
+                    story.append(Spacer(1, 6))
+                    story.append(table)
+
+                story.append(Spacer(1, 20))
+                story.append(Paragraph(
+                    f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>"
+                    "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
+                    styles["Italic"]
+                ))
+
+                doc.build(story)
+
+                with open(pdf_path, "rb") as f:
+                    pdf_data = f.read()
+
+                st.download_button(
+                    label="⬇️ Télécharger le rapport PDF",
+                    data=pdf_data,
+                    file_name="rapport_snim.pdf",
+                    mime="application/pdf"
+                )
+
+                st.success("✅ Rapport PDF généré avec succès !")
+
             except Exception as e:
                 st.error(f"⚠️ Erreur lors de la génération du rapport : {e}")
 
