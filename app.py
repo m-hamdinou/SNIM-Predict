@@ -91,49 +91,50 @@ if uploaded_file is not None:
             resume = pd.DataFrame()
 
         # ==================== GÉNÉRATION DU PDF ====================
-        if st.button("📄 Générer le rapport PDF"):
-            try:
-                doc = SimpleDocTemplate("rapport_snim.pdf", pagesize=A4)
-                styles = getSampleStyleSheet()
-                story = []
+  if st.button("📄 Générer le rapport PDF"):
+         try:
+               # --- création du PDF ---
+               doc = SimpleDocTemplate("rapport_snim.pdf", pagesize=A4)
+               styles = getSampleStyleSheet()
+               story = []
 
-                if os.path.exists("snim_logo.png"):
-                    story.append(Image("snim_logo.png", width=120, height=60))
-                story.append(Spacer(1, 20))
-                story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
-                story.append(Spacer(1, 15))
-                story.append(Paragraph(f"Précision : {acc:.2f} Score F1 : {f1:.2f}", styles["BodyText"]))
-                story.append(Spacer(1, 10))
+          if os.path.exists("snim_logo.png"):
+            story.append(Image("snim_logo.png", width=120, height=60))
+               story.append(Spacer(1, 20))
+               story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
+               story.append(Spacer(1, 15))
+               story.append(Paragraph(f"Précision : {acc:.2f} Score F1 : {f1:.2f}", styles["BodyText"]))
+               story.append(Spacer(1, 10))
 
-                if not resume.empty:
-                    story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
-                    for _, row in resume.iterrows():
-                        story.append(Paragraph(f"{row['Engin']} – {row['Statut']}", styles["BodyText"]))
-                    story.append(Spacer(1, 15))
+          if not resume.empty:
+             story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
+             for _, row in resume.iterrows():
+                story.append(Paragraph(f"{row['Engin']} – {row['Statut']}", styles["BodyText"]))
+             story.append(Spacer(1, 15))
 
-                story.append(Paragraph(
-                    f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>"
-                    "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
-                    styles["Italic"]
-                ))
+          story.append(Paragraph(
+            f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>"
+            "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
+            styles["Italic"]
+           ))
+           doc.build(story)
 
-                doc.build(story)
+        # --- lecture et envoi du PDF ---
+        with open("rapport_snim.pdf", "rb") as f:
+            pdf_data = f.read()
 
-                # Lecture et envoi correct du fichier
-                with open("rapport_snim.pdf", "rb") as f:
-                    pdf_bytes = f.read()
+        st.download_button(
+            "⬇️ Télécharger le rapport PDF",
+            data=pdf_data,
+            file_name="rapport_snim.pdf",
+            mime="application/pdf",
+            key="download_pdf"
+        )
 
-                st.download_button(
-                    label="⬇️ Télécharger le rapport PDF",
-                    data=pdf_bytes,
-                    file_name="rapport_snim.pdf",
-                    mime="application/pdf"
-                )
+        st.success("✅ Rapport généré avec succès ! Cliquez sur le bouton pour le télécharger.")
 
-                st.success("✅ Rapport généré avec succès ! Cliquez sur le bouton pour le télécharger.")
-
-            except Exception as e:
-                st.error(f"⚠️ Erreur lors de la génération du rapport : {e}")
+  except Exception as e:
+         st.error(f"⚠️ Erreur lors de la génération du rapport : {e}")
 
 st.markdown(
     '<div class="footer">© 2025 SNIM Predict – HAMDINOU Moulaye Driss</div>',
