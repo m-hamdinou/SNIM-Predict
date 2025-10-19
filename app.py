@@ -118,6 +118,9 @@ if uploaded_file is not None:
                     styles["Italic"]
                 ))
                 doc.build(story)
+                st.info("✅ Le fichier PDF a été généré sur le serveur.")
+                st.write("📂 Contenu du dossier :", os.listdir("."))
+
 
                 # --- lecture et envoi du PDF ---
                 with open("rapport_snim.pdf", "rb") as f:
