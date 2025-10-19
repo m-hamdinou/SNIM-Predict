@@ -6,14 +6,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 import plotly.express as px
 from datetime import datetime
-import os, tempfile
+import os, tempfile, base64
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-from data_preprocessing import valider_et_preparer
 
-# ==================== CONFIGURATION ====================
+# ==================== CONFIG ====================
 st.set_page_config(page_title="SNIM Predict", page_icon="🤖", layout="wide")
 
 st.markdown("""
@@ -28,18 +27,10 @@ if os.path.exists("snim_logo.png"):
 st.title("💡 SNIM Predict – Supervision et Diagnostic Intelligent des Engins")
 st.write("_Développée par **HAMDINOU Moulaye Driss – Data Scientist**_")
 
-st.info(
-    "Importez un ou plusieurs fichiers IoT pour analyser l’état des engins. "
-    "L’IA SNIM Predict détecte automatiquement les comportements anormaux, "
-    "prédit les pannes probables et génère un rapport clair."
-)
+st.info("Importez un ou plusieurs fichiers CSV contenant les données IoT des engins pour une analyse immédiate et un rapport PDF complet.")
 
 # ==================== UPLOAD ====================
-uploaded_files = st.file_uploader(
-    "📂 Importez un ou plusieurs fichiers CSV de données capteurs",
-    type=["csv"],
-    accept_multiple_files=True
-)
+uploaded_files = st.file_uploader("📂 Importez vos fichiers CSV", type=["csv"], accept_multiple_files=True)
 
 if uploaded_files:
     dfs = [pd.read_csv(f) for f in uploaded_files]
@@ -47,24 +38,17 @@ if uploaded_files:
     st.success(f"✅ {len(uploaded_files)} fichier(s) importé(s) avec succès !")
     st.dataframe(df.head())
 
-    # ==================== VALIDATION DES DONNÉES ====================
-    try:
-        df, message = valider_et_preparer(df)
-        st.success(message)
-    except Exception as e:
-        st.error(f"❌ Erreur dans les données : {e}")
-        st.stop()
+    # Nettoyage
+    df = df.dropna()
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = pd.factorize(df[col])[0]
 
-    # ==================== ANALYSE IA ====================
     if st.button("🚀 Lancer l’analyse IA"):
-        for col in df.columns:
-            if df[col].dtype == "object":
-                df[col] = pd.factorize(df[col])[0]
-
         X = df.drop(columns=["Label"]) if "Label" in df.columns else df.iloc[:, :-1]
         y = df["Label"] if "Label" in df.columns else df.iloc[:, -1]
-
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
         model = RandomForestClassifier(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
@@ -76,47 +60,28 @@ if uploaded_files:
         st.markdown(f"- **Exactitude (Accuracy)** : `{acc:.2f}`")
         st.markdown(f"- **Score F1** : `{f1:.2f}`")
 
-        # ==================== RÉSUMÉ DES ENGINES ====================
+        # === Résumé ===
         if "Engin" in df.columns:
             resume = df.groupby("Engin")["Label"].mean().reset_index()
-            resume["Statut"] = resume["Label"].apply(
-                lambda x: "⚠️ Risque élevé" if x > 0.6 else
-                          ("🔸 Risque moyen" if x > 0.3 else "✅ Normal")
-            )
-
             resume["Prochain_risque"] = resume["Label"].apply(
                 lambda x: (
-                    "🔴 À vérifier immédiatement (panne probable)" if x > 0.5 else
-                    "🟠 Surveillance conseillée (début d’anomalie)" if x > 0.2 else
-                    "🟢 OK – fonctionnement normal"
+                    "🔴 À vérifier immédiatement" if x > 0.5 else
+                    "🟠 Surveiller" if x > 0.2 else
+                    "🟢 OK"
                 )
             )
-
             st.markdown("### 🔍 Diagnostic automatique par engin")
-            st.dataframe(resume[["Engin", "Label", "Prochain_risque"]])
+            st.dataframe(resume)
 
-            engin_max = resume.loc[resume["Label"].idxmax()]
-            if engin_max["Label"] > 0.5:
-                st.error(f"🚨 L'engin {int(engin_max['Engin'])} présente un risque élevé ({engin_max['Label']:.2f}) — vérification urgente requise !")
-            elif engin_max["Label"] > 0.2:
-                st.warning(f"⚠️ L'engin {int(engin_max['Engin'])} montre une dérive possible ({engin_max['Label']:.2f}) — surveillance recommandée.")
-            else:
-                st.success("✅ Tous les engins fonctionnent normalement pour le moment.")
-
-            st.markdown("### 📈 Niveau de risque par engin")
             fig = px.bar(
                 resume, x="Engin", y="Label", color="Prochain_risque",
-                color_discrete_map={
-                    "🔴 À vérifier immédiatement (panne probable)": "red",
-                    "🟠 Surveillance conseillée (début d’anomalie)": "orange",
-                    "🟢 OK – fonctionnement normal": "green"
-                },
+                color_discrete_map={"🔴 À vérifier immédiatement":"red","🟠 Surveiller":"orange","🟢 OK":"green"},
                 title="Indice de risque global par engin"
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
+            st.warning("⚠️ Aucune colonne 'Engin' détectée.")
             resume = pd.DataFrame()
-            st.warning("⚠️ Aucune colonne 'Engin' détectée. Impossible de générer le diagnostic individuel.")
 
         # ==================== GÉNÉRATION PDF ====================
         if st.button("📄 Générer le rapport PDF"):
@@ -131,7 +96,6 @@ if uploaded_files:
                 if os.path.exists("snim_logo.png"):
                     story.append(Image("snim_logo.png", width=120, height=60))
                 story.append(Spacer(1, 20))
-
                 story.append(Paragraph("<b><font size=16 color='#004b8d'>Rapport SNIM Predict</font></b>", styles["Title"]))
                 story.append(Spacer(1, 12))
                 story.append(Paragraph(f"<b>Exactitude (Accuracy)</b> : {acc:.2f}<br/><b>Score F1</b> : {f1:.2f}", styles["BodyText"]))
@@ -141,7 +105,7 @@ if uploaded_files:
                     story.append(Paragraph("<b>Résumé par engin :</b>", styles["Heading3"]))
                     data = [["Engin", "Indice moyen", "Diagnostic"]]
                     for _, r in resume.iterrows():
-                        data.append([str(r["Engin"]), f"{r['Label']:.2f}", r.get("Prochain_risque", "N/A")])
+                        data.append([str(r["Engin"]), f"{r['Label']:.2f}", r["Prochain_risque"]])
                     table = Table(data, colWidths=[60, 80, 300])
                     table.setStyle(TableStyle([
                         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#004b8d")),
@@ -163,15 +127,12 @@ if uploaded_files:
 
                 doc.build(story)
 
+                # Conversion en base64 pour forcer le téléchargement
                 with open(pdf_path, "rb") as f:
-                    pdf_data = f.read()
+                    b64 = base64.b64encode(f.read()).decode()
 
-                st.download_button(
-                    label="⬇️ Télécharger le rapport PDF",
-                    data=pdf_data,
-                    file_name="rapport_snim.pdf",
-                    mime="application/pdf"
-                )
+                href = f'<a href="data:application/octet-stream;base64,{b64}" download="rapport_snim.pdf">📥 Télécharger le rapport PDF</a>'
+                st.markdown(href, unsafe_allow_html=True)
 
                 st.success("✅ Rapport PDF généré avec succès !")
 
