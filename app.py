@@ -91,7 +91,7 @@ if uploaded_file is not None:
             resume = pd.DataFrame()
 
         # ==================== GÉNÉRATION DU PDF ====================
-  if st.button("📄 Générer le rapport PDF"):
+       if st.button("📄 Générer le rapport PDF"):
          try:
                # --- création du PDF ---
                doc = SimpleDocTemplate("rapport_snim.pdf", pagesize=A4)
