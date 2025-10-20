@@ -18,7 +18,6 @@ import os
 # CONFIGURATION GÉNÉRALE
 # ==========================================================
 st.set_page_config(page_title="SNIM Predict", page_icon="🤖", layout="wide")
-
 st.markdown("""
 <style>
 h1, h2, h3 {color:#004b8d;}
@@ -34,29 +33,40 @@ if os.path.exists("snim_logo.png"):
 st.title("💡 SNIM Predict – Supervision & Diagnostic Intelligent")
 st.write("_IA de maintenance prédictive développée pour la SNIM par **HAMDINOU Moulaye Driss**_")
 
-# ==========================================================
-# CHARGEMENT DES DONNÉES
-# ==========================================================
-train_path = "aps_failure_training_set.csv"
-test_path = "aps_failure_test_set.csv"
-
-if not (os.path.exists(train_path) and os.path.exists(test_path)):
-    st.error("⚠️ Fichiers Scania APS introuvables. Place-les dans le même dossier que ce script.")
-    st.stop()
-
 st.sidebar.title("🧭 Options")
 mode = st.sidebar.radio("Choisir la vue :", ["Vue Synthétique", "Mode Technique"])
 st.sidebar.markdown("---")
 st.sidebar.markdown("© 2025 SNIM Predict – Développée par **HAMDINOU Moulaye Driss**")
 
 # ==========================================================
-# LECTURE ET PRÉTRAITEMENT
+# CHARGEMENT / UPLOAD DES DONNÉES
 # ==========================================================
-st.info("📂 Chargement et nettoyage des données Scania APS...")
+train_path = "aps_failure_training_set.csv"
+test_path = "aps_failure_test_set.csv"
 
-train_df = pd.read_csv(train_path)
-test_df = pd.read_csv(test_path)
+train_df = None
+test_df = None
 
+if os.path.exists(train_path) and os.path.exists(test_path):
+    st.success("✅ Jeux de données Scania APS détectés automatiquement.")
+    train_df = pd.read_csv(train_path)
+    test_df = pd.read_csv(test_path)
+else:
+    st.warning("📂 Fichiers Scania APS introuvables. Veuillez les importer manuellement ci-dessous :")
+    uploaded_train = st.file_uploader("⬆️ Importer le fichier d'entraînement (aps_failure_training_set.csv)", type="csv")
+    uploaded_test = st.file_uploader("⬆️ Importer le fichier de test (aps_failure_test_set.csv)", type="csv")
+
+    if uploaded_train and uploaded_test:
+        train_df = pd.read_csv(uploaded_train)
+        test_df = pd.read_csv(uploaded_test)
+        st.success("✅ Les deux fichiers ont été importés avec succès.")
+    else:
+        st.stop()
+
+# ==========================================================
+# PRÉTRAITEMENT
+# ==========================================================
+st.info("🧹 Nettoyage des données...")
 for df in [train_df, test_df]:
     df.replace("na", np.nan, inplace=True)
     df[df.columns.difference(["class"])] = df[df.columns.difference(["class"])].astype("float32")
