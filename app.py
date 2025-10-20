@@ -1,24 +1,24 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, f1_score
 import plotly.express as px
 from datetime import datetime
 from io import BytesIO
 import base64
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-import joblib
 import os
-import csv
 
 # ==========================================================
-# CONFIGURATION
+# CONFIGURATION GÉNÉRALE
 # ==========================================================
 st.set_page_config(page_title="SNIM Predict", page_icon="🤖", layout="wide")
+
 st.markdown("""
 <style>
 h1, h2, h3 {color:#004b8d;}
@@ -28,119 +28,141 @@ h1, h2, h3 {color:#004b8d;}
 
 if os.path.exists("snim_logo.png"):
     st.image("snim_logo.png", width=160)
+
 st.title("💡 SNIM Predict – Supervision & Diagnostic Intelligent")
-st.write("_IA de maintenance prédictive développée pour la SNIM par **HAMDINOU Moulaye Driss**_")
+st.write("_IA de maintenance prédictive développée par **HAMDINOU Moulaye Driss**_")
 
 # ==========================================================
-# CHARGEMENT DES DONNÉES INTERNES
+# INTRODUCTION
 # ==========================================================
-data_dir = "data"
-train_path = os.path.join(data_dir, "aps_failure_training_set.csv")
-test_path = os.path.join(data_dir, "aps_failure_test_set.csv")
+st.markdown("""
+### 📖 Introduction
 
-if not (os.path.exists(train_path) and os.path.exists(test_path)):
-    st.error("⚠️ Données internes Scania APS introuvables. Vérifie le dossier /data.")
-    st.stop()
+Les données utilisées proviennent d’un **jeu de données public de maintenance prédictive**,
+simulant une flotte de **5 engins industriels** envoyant leurs relevés de capteurs.
+L’objectif est de prédire la **probabilité de panne** (`failure = 1`) à partir des mesures.
 
-# Détection automatique du séparateur (, ou ;)
-def auto_read_csv(path):
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        sample = f.read(1024)
-        f.seek(0)
-        dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t"])
-        return pd.read_csv(path, sep=dialect.delimiter, engine="python", encoding="utf-8")
-
-st.info("📂 Chargement et nettoyage des données internes...")
-train_df = auto_read_csv(train_path)
-test_df = auto_read_csv(test_path)
-
-for df in [train_df, test_df]:
-    df.replace("na", np.nan, inplace=True)
-    num_cols = df.columns.difference(["class"])
-    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
-    df[num_cols] = df[num_cols].fillna(df[num_cols].median())
-    df["class"] = df["class"].map({"neg": 0, "pos": 1})
-
-X_train, y_train = train_df.drop(columns=["class"]), train_df["class"]
-X_test, y_test = test_df.drop(columns=["class"]), test_df["class"]
+Nous utilisons ici un **échantillon de 10 000 lignes**, représentatif mais léger,
+permettant d’entraîner rapidement un modèle d’intelligence artificielle
+pour le diagnostic préventif et la supervision en temps réel.
+""")
 
 # ==========================================================
-# ENTRAÎNEMENT
+# CHARGEMENT DU DATASET INTERNE
 # ==========================================================
-st.info("🚀 Entraînement du modèle Random Forest...")
-model = RandomForestClassifier(
-    n_estimators=200,
-    n_jobs=-1,
-    class_weight="balanced",
-    random_state=42
-)
-model.fit(X_train, y_train)
-joblib.dump(model, "snim_model.pkl")
+st.info("📂 Chargement du dataset interne (5 engins / 10 000 lignes)...")
 
-# ==========================================================
-# ÉVALUATION
-# ==========================================================
-st.info("🔮 Évaluation du modèle sur le jeu de test...")
-y_pred = model.predict(X_test)
-acc = accuracy_score(y_test, y_pred)
-f1 = f1_score(y_test, y_pred)
-cm = confusion_matrix(y_test, y_pred)
+try:
+    df = pd.read_csv("subset_5_engins_10000.csv")
+    st.success(f"✅ Données chargées : {df.shape[0]} lignes – {df['device'].nunique()} engins détectés")
 
-# ==========================================================
-# INTERFACE
-# ==========================================================
-mode = st.sidebar.radio("🧭 Mode :", ["Vue Synthétique", "Mode Technique"])
-st.sidebar.markdown("---")
-st.sidebar.markdown("© 2025 SNIM Predict – Développée par **HAMDINOU Moulaye Driss**")
+    # Vérif colonnes
+    expected_metrics = [c for c in df.columns if "metric" in c]
+    if len(expected_metrics) == 0:
+        st.error("❌ Aucune colonne 'metric' détectée.")
+    else:
+        # ==========================================================
+        # ENTRAÎNEMENT DU MODÈLE
+        # ==========================================================
+        X = df[expected_metrics]
+        y = df["failure"]
 
-if mode == "Vue Synthétique":
-    st.subheader("📊 Résultats du diagnostic global")
-    st.metric("Exactitude (Accuracy)", f"{acc:.3f}")
-    st.metric("Score F1", f"{f1:.3f}")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, stratify=y, random_state=42
+        )
 
-    st.markdown("### 📉 Matrice de confusion")
-    cm_df = pd.DataFrame(cm, columns=["Prédit négatif", "Prédit positif"], index=["Réel négatif", "Réel positif"])
-    st.dataframe(cm_df)
+        model = RandomForestClassifier(
+            n_estimators=200, class_weight="balanced", random_state=42, n_jobs=-1
+        )
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
 
-    st.markdown("### 🧭 Schéma de fonctionnement")
-    mermaid = """
-    graph TD
-    A[Capteurs IoT sur engins] --> B[Prétraitement]
-    B --> C[Modèle IA Random Forest]
-    C --> D{Diagnostic prédictif}
-    D -->|🟢 Normal| E[OK]
-    D -->|🟠 Dérive| F[Surveillance]
-    D -->|🔴 Panne| G[Intervention]
-    """
-    st.markdown(f"```mermaid\n{mermaid}\n```")
+        acc = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
 
-    if st.button("📄 Générer le rapport PDF"):
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = []
+        st.subheader("📊 Performances du modèle")
+        col1, col2 = st.columns(2)
+        col1.metric("Exactitude (Accuracy)", f"{acc:.3f}")
+        col2.metric("Score F1", f"{f1:.3f}")
 
-        if os.path.exists("snim_logo.png"):
-            story.append(Image("snim_logo.png", width=120, height=60))
-        story.append(Spacer(1, 15))
-        story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
-        story.append(Spacer(1, 15))
-        story.append(Paragraph(f"Accuracy : {acc:.3f} | F1-score : {f1:.3f}", styles["Normal"]))
-        story.append(Spacer(1, 20))
-        story.append(Paragraph(
-            f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}.<br/>"
-            "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
-            styles["Italic"]
-        ))
-        doc.build(story)
-        buffer.seek(0)
-        b64 = base64.b64encode(buffer.read()).decode()
-        href = f'<a href="data:application/pdf;base64,{b64}" download="rapport_snim.pdf">📥 Télécharger le rapport PDF</a>'
-        st.markdown(href, unsafe_allow_html=True)
+        # ==========================================================
+        # ANALYSE PAR ENGIN
+        # ==========================================================
+        st.markdown("### 🏗️ Analyse par engin (device)")
+        df["predicted_failure"] = model.predict(X)
+        resume = df.groupby("device")["predicted_failure"].mean().reset_index()
+        resume["Statut"] = resume["predicted_failure"].apply(
+            lambda x: "🔴 Risque élevé" if x > 0.6 else ("🟠 Risque moyen" if x > 0.3 else "🟢 Normal")
+        )
 
-else:
-    st.subheader("🔬 Détails techniques du modèle")
-    st.text(classification_report(y_test, y_pred))
-    imp = pd.DataFrame({"Variable": X_train.columns, "Importance": model.feature_importances_})
-    fig_imp = px.bar(imp.nlargest(20, "Importance"), x="Variable", y="Importance", title="Top 20 variables importantes")
-    st.plotly_chart(fig_imp, use_container_width=True)
+        fig = px.bar(
+            resume,
+            x="device",
+            y="predicted_failure",
+            color="Statut",
+            color_discrete_map={"🔴 Risque élevé": "red", "🟠 Risque moyen": "orange", "🟢 Normal": "green"},
+            title="Indice de risque moyen par engin"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ==========================================================
+        # SCHÉMA EXPLICATIF (IA)
+        # ==========================================================
+        st.markdown("### 🧭 Schéma de fonctionnement de SNIM Predict")
+        mermaid = """
+        graph TD
+        A[Capteurs IoT sur engins] --> B[Collecte & Prétraitement des signaux]
+        B --> C[Modèle IA Random Forest]
+        C --> D[Analyse des comportements]
+        D --> E{Diagnostic prédictif}
+        E -->|🟢 Normal| F[OK]
+        E -->|🟠 Dérive| G[Surveillance]
+        E -->|🔴 Panne| H[Intervention urgente]
+        """
+        st.markdown(f"```mermaid\n{mermaid}\n```")
+
+        # ==========================================================
+        # GÉNÉRATION DU RAPPORT PDF
+        # ==========================================================
+        if st.button("📄 Générer le rapport PDF"):
+            try:
+                buffer = BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4)
+                styles = getSampleStyleSheet()
+                story = []
+
+                if os.path.exists("snim_logo.png"):
+                    story.append(Image("snim_logo.png", width=120, height=60))
+                story.append(Spacer(1, 15))
+                story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
+                story.append(Spacer(1, 15))
+                story.append(Paragraph(f"Précision : {acc:.3f} | Score F1 : {f1:.3f}", styles["Normal"]))
+                story.append(Spacer(1, 10))
+                story.append(Paragraph("Résumé par engin :", styles["Heading3"]))
+
+                table_data = [["Device", "Indice", "Statut"]] + resume.values.tolist()
+                table = Table(table_data)
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightblue),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ]))
+                story.append(table)
+                story.append(Spacer(1, 20))
+                story.append(Paragraph(
+                    f"Analyse effectuée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}.<br/>"
+                    "<b>IA développée par HAMDINOU Moulaye Driss – Data Scientist</b>",
+                    styles["Italic"]
+                ))
+
+                doc.build(story)
+                buffer.seek(0)
+                b64 = base64.b64encode(buffer.read()).decode()
+                href = f'<a href="data:application/pdf;base64,{b64}" download="rapport_snim.pdf">📥 Télécharger le rapport PDF</a>'
+                st.markdown(href, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"⚠️ Erreur lors de la génération du PDF : {e}")
+
+except FileNotFoundError:
+    st.error("❌ Le fichier 'subset_5_engins_10000.csv' est introuvable dans le dossier.")
