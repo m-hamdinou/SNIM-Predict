@@ -1,13 +1,21 @@
+# ==========================================================
+# 💡 SNIM Predict – IA industrielle avancée
+# Développée par HAMDINOU Moulaye Driss
+# ==========================================================
 import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+from xgboost import XGBClassifier
 import plotly.express as px
-from datetime import datetime
+import seaborn as sns
+import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
+from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib import colors
@@ -15,10 +23,9 @@ from reportlab.lib.styles import getSampleStyleSheet
 import os
 
 # ==========================================================
-# CONFIGURATION GÉNÉRALE
+# 🎨 CONFIGURATION INTERFACE
 # ==========================================================
 st.set_page_config(page_title="SNIM Predict", page_icon="🤖", layout="wide")
-
 st.markdown("""
 <style>
 h1, h2, h3 {color:#004b8d;}
@@ -28,64 +35,86 @@ h1, h2, h3 {color:#004b8d;}
 
 if os.path.exists("snim_logo.png"):
     st.image("snim_logo.png", width=160)
-
 st.title("💡 SNIM Predict – Supervision & Diagnostic Intelligent")
 st.write("_IA de maintenance prédictive développée par **HAMDINOU Moulaye Driss**_")
 
 # ==========================================================
-# 🔗 CHARGEMENT DU DATASET (depuis Google Drive)
+# 📥 CHARGEMENT DU DATASET (depuis Google Drive)
 # ==========================================================
 DRIVE_URL = "https://drive.google.com/uc?id=14RZB_Qe62IJnB_b86o0fhlzmduLjLUGi"
 
 @st.cache_data(show_spinner=True)
 def load_data():
-    try:
-        st.info("📥 Chargement des données depuis Google Drive…")
-        df = pd.read_csv(DRIVE_URL)
-        st.success(f"✅ Données chargées : {df.shape[0]} lignes – {df['device'].nunique()} engins détectés.")
-        return df
-    except Exception as e:
-        st.error(f"⚠️ Erreur lors du chargement du dataset : {e}")
-        return pd.DataFrame()
+    st.info("📥 Chargement des données depuis Google Drive…")
+    df = pd.read_csv(DRIVE_URL)
+    st.success(f"✅ Données chargées : {df.shape[0]} lignes – {df['device'].nunique()} engins détectés.")
+    return df
 
 df = load_data()
 
 if not df.empty:
     # ==========================================================
-    # PRÉPARATION DES DONNÉES
+    # 🧹 PRÉTRAITEMENT
     # ==========================================================
     metric_cols = [c for c in df.columns if "metric" in c]
     X = df[metric_cols]
     y = df["failure"]
 
-    # Séparation train/test
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, stratify=y, random_state=42
+        X_scaled, y, test_size=0.3, stratify=y, random_state=42
     )
 
+    # Rééquilibrage des classes avec SMOTE
+    sm = SMOTE(random_state=42)
+    X_res, y_res = sm.fit_resample(X_train, y_train)
+
     # ==========================================================
-    # ENTRAÎNEMENT DU MODÈLE
+    # 🧠 ENTRAÎNEMENT AVEC XGBoost
     # ==========================================================
-    model = RandomForestClassifier(
-        n_estimators=200, class_weight="balanced", random_state=42, n_jobs=-1
+    model = XGBClassifier(
+        scale_pos_weight=(len(y_res) - sum(y_res)) / sum(y_res),
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        n_jobs=-1
     )
-    model.fit(X_train, y_train)
+    model.fit(X_res, y_res)
+
+    # Prédiction
     y_pred = model.predict(X_test)
     acc, f1 = accuracy_score(y_test, y_pred), f1_score(y_test, y_pred)
 
     # ==========================================================
-    # PERFORMANCES GÉNÉRALES
+    # 📊 PERFORMANCES GLOBALES
     # ==========================================================
     st.subheader("📊 Performances globales du modèle")
     col1, col2 = st.columns(2)
     col1.metric("Exactitude (Accuracy)", f"{acc:.3f}")
     col2.metric("Score F1", f"{f1:.3f}")
 
+    st.write("**Matrice de confusion :**")
+    cm = confusion_matrix(y_test, y_pred)
+    st.dataframe(pd.DataFrame(cm, index=["Normal", "Panne"], columns=["Prévu normal", "Prévu panne"]))
+
     # ==========================================================
-    # ANALYSE PAR ENGIN
+    # 🔍 ANALYSE DE CORRÉLATION
     # ==========================================================
-    st.markdown("### 🏗️ Analyse des engins")
-    df["predicted_failure"] = model.predict_proba(X)[:, 1]
+    st.markdown("### 🔬 Corrélation entre capteurs et pannes")
+    corr = df[metric_cols + ["failure"]].corr()["failure"].sort_values(ascending=False)
+    fig_corr = px.bar(corr, title="Corrélation de chaque capteur avec la variable de panne")
+    st.plotly_chart(fig_corr, use_container_width=True)
+
+    # ==========================================================
+    # 🏗️ ANALYSE PAR ENGIN
+    # ==========================================================
+    st.markdown("### 🏗️ Analyse des engins et prédictions IA")
+    df["predicted_failure"] = model.predict_proba(scaler.transform(df[metric_cols]))[:, 1]
 
     resume = df.groupby("device")["predicted_failure"].mean().reset_index()
     resume["Statut"] = resume["predicted_failure"].apply(
@@ -93,38 +122,28 @@ if not df.empty:
     )
 
     fig = px.bar(
-        resume,
-        x="device",
-        y="predicted_failure",
-        color="Statut",
+        resume, x="device", y="predicted_failure", color="Statut",
         color_discrete_map={"🔴 Risque élevé": "red", "🟠 Risque moyen": "orange", "🟢 Normal": "green"},
         title="Indice de risque moyen par engin"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Liste des engins à problème
     problemes = resume[resume["Statut"] != "🟢 Normal"].sort_values("predicted_failure", ascending=False)
     st.markdown("### 🚨 Engins présentant un risque de panne")
     st.dataframe(problemes.head(20))
 
     # ==========================================================
-    # SCHÉMA IA (Mermaid)
+    # ⏱️ VISUALISATION TEMPORELLE PAR ENGIN
     # ==========================================================
-    st.markdown("### 🧭 Schéma de fonctionnement de SNIM Predict")
-    mermaid = """
-    graph TD
-    A[Capteurs IoT sur engins] --> B[Collecte & Prétraitement des signaux]
-    B --> C[Modèle IA Random Forest]
-    C --> D[Analyse des comportements]
-    D --> E{Diagnostic prédictif}
-    E -->|🟢 Normal| F[OK]
-    E -->|🟠 Dérive| G[Surveillance]
-    E -->|🔴 Panne| H[Intervention urgente]
-    """
-    st.markdown(f"```mermaid\n{mermaid}\n```")
+    st.markdown("### 📈 Visualisation temporelle d’un engin")
+    engins_disponibles = df["device"].unique().tolist()
+    choix_engin = st.selectbox("Sélectionnez un engin :", engins_disponibles)
+    df_engin = df[df["device"] == choix_engin]
+    fig_time = px.line(df_engin, x="date", y=metric_cols, title=f"Évolution des capteurs – Engin {choix_engin}")
+    st.plotly_chart(fig_time, use_container_width=True)
 
     # ==========================================================
-    # RAPPORT PDF
+    # 📄 RAPPORT PDF
     # ==========================================================
     if st.button("📄 Générer le rapport PDF"):
         try:
@@ -138,7 +157,7 @@ if not df.empty:
             story.append(Spacer(1, 15))
             story.append(Paragraph("<b>Rapport SNIM Predict</b>", styles["Title"]))
             story.append(Spacer(1, 15))
-            story.append(Paragraph(f"Précision : {acc:.3f} | Score F1 : {f1:.3f}", styles["Normal"]))
+            story.append(Paragraph(f"Exactitude : {acc:.3f} | Score F1 : {f1:.3f}", styles["Normal"]))
             story.append(Spacer(1, 10))
             story.append(Paragraph("Résumé des engins à risque :", styles["Heading3"]))
 
